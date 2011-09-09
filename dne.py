@@ -1,3 +1,6 @@
+"""Does Not Exist
+   Object to signify answer doesn't exist (e.g. division by zero)
+"""
 
 from jamenson.runtime.multimethod import defmethod
 from jamenson.runtime.atypes import anytype
