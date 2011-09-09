@@ -1,7 +1,7 @@
-Physical Math - Utilties for calculation with measurments
+Physical Math - Utilities for calculation with measurements
 =========================================================
-physmath is a Python module for working with measurments; specifically
-wtih regard to their limited accuracy (significant figures) and
+physmath is a Python module for working with measurements; specifically
+with regard to their limited accuracy (significant figures) and
 their units. The components were originally developed for several
 online chemistry apps and it is our hope that you will find them useful
 in your own projects.
