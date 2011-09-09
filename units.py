@@ -6,7 +6,7 @@ from __future__ import absolute_import
 
 import operator
 from math import log10
-from re import Scanner
+import re
 from functools import partial
 from collections import defaultdict
 from decimal import Decimal
@@ -52,13 +52,24 @@ class CompoundBase(AutoRepr, A.DivAlgebraBase):
         return self.__class__(atoms)
 
     def __hash__(self):
-        return hash(self.__class__) ^ hash(self.cannonicalized().atoms_and_powers)
+        op = self.cannonicalized()
+        if len(op.atoms_and_powers) == 1:
+            [[atom,power]] = op.atoms_and_powers
+            if isinstance(atom, self.atom_primitive) and power==1:
+                return hash(atom)
+        return hash(self.cannonicalized().atoms_and_powers)
 
     comparable_classes = ()
     def __eq__(self, other):
-        if not isinstance(other, self.comparable_classes):
+        if isinstance(other, self.atom_primitive):
+            other = self.__class__([[other, 1]])
+            assert isinstance(other, self.comparable_classes)
+        elif not isinstance(other, self.comparable_classes):
             return NotImplemented
         return self.cannonicalized().atoms_and_powers == other.cannonicalized().atoms_and_powers
+
+    def __req__(self, other):
+        return self == other
 
     def __ne__(self, other):
         return not (self==other)
@@ -191,12 +202,22 @@ class PrimitiveDimensionality(BaseDimensionality, A.DivAlgebraBase):
     def get_name(self):
         return self.name
 
+    def __reduce__(self):
+        return load_primitive_dimensionality, (self.name,)
+
+def load_primitive_dimensionality(name):
+    return PrimitiveDimensionality.names[name]
+
 
 compound_dimensionality_names = {}
 
 class CompoundDimensionality(BaseDimensionality, CompoundBase):
 
     atom_base = BaseDimensionality
+    atom_primitive = PrimitiveDimensionality
+
+    def __hash__(self):
+        return CompoundBase.__hash__(self)
 
     @staticmethod
     def arg_to_atom(arg):
@@ -428,7 +449,14 @@ P = prefixes = prefixes()
 
 class BaseUnit(AutoRepr, A.DivAlgebraBase):
 
-    pass
+    def get_display_name(self):
+        name = self.get_name().replace('_', ' ')
+        if re.match('^.*[^\d]3$', name):
+            return 'cubic %s' % (name[:-1:],)
+        elif re.match('^.*[^\d]2$', name):
+            return 'square %s' % (name[:-1:],)
+        return name
+
 
 as_unit = MultiMethod('as_unit')
 
@@ -501,10 +529,17 @@ class PrimitiveUnit(BaseUnit):
     def pow(self, p):
         return primunit_to_compound(self).pow(p)
 
+    def __reduce__(self):
+        return load_primitive_unit, (self.name,)
+
+def load_primitive_unit(name):
+    return PrimitiveUnit.names[name]
+
 
 class CompoundUnit(BaseUnit, CompoundBase):
 
     atom_base = BaseUnit
+    atom_primitive = PrimitiveUnit
 
     def __init__(self, atoms_and_powers=(), prefix=P.no_prefix, cannonical=False):
         CompoundBase.__init__(self, atoms_and_powers)
@@ -535,8 +570,8 @@ class CompoundUnit(BaseUnit, CompoundBase):
 
     def __hash__(self):
         op = self.cannonicalized()
-        if (self.prefix==P.no_prefix and len(self.atoms_and_powers) == 1):
-            [[atom,power]] = self.atoms_and_powers
+        if (op.prefix==P.no_prefix and len(op.atoms_and_powers) == 1):
+            [[atom,power]] = op.atoms_and_powers
             if isinstance(atom, PrimitiveUnit) and power==1:
                 return hash(atom)
         return hash(self.prefix) ^ super(CompoundUnit, self).__hash__()
@@ -569,19 +604,25 @@ class CompoundUnit(BaseUnit, CompoundBase):
 
     names = {}
     @classmethod
-    def register_name(cls, unit, name, abbrev=None):
+    def register_name(cls, unit, name, abbrev=None, no_prefix=False):
         assert isinstance(unit, CompoundUnit)
-        assert unit not in cls.names
-        cls.names[unit.without_prefix()] = unit.prefix, name, abbrev
+        #assert unit not in cls.names
+        assert unit.without_prefix() not in cls.names,\
+               "%s alread registered as %r; can't redefine as %r" % (
+            repr(unit), cls.names[unit.without_prefix()], (unit.prefix, name, abbrev, no_prefix))
+        cls.names[unit.without_prefix()] = unit.prefix, name, abbrev, no_prefix
         return unit
 
     def get_name_abbrev_prefix(self):
         op = self.cannonicalized()
         try:
-            prefix, name, abbrev = self.names[op.without_prefix()]
+            prefix, name, abbrev, no_prefix = self.names[op.without_prefix()]
         except KeyError:
             return None, None, None
-        return op.prefix/prefix, name, abbrev
+        effective_prefix = op.prefix/prefix
+        if no_prefix and effective_prefix != prefixes.no_prefix:
+            return None, None, None
+        return effective_prefix, name, abbrev
 
     def get_name(self):
         prefix,name,abbrev = self.get_name_abbrev_prefix()
@@ -591,7 +632,7 @@ class CompoundUnit(BaseUnit, CompoundBase):
 
     def get_abbrev(self):
         prefix,name,abbrev = self.get_name_abbrev_prefix()
-        if name is not None:
+        if abbrev is not None:
             return '%s%s' % ('' if prefix is P.no_prefix else prefix.get_abbrev(), abbrev)
         return self.format(format_power='%s%d', prefix_attr='get_abbrev', unit_text='get_abbrev')
 
@@ -761,7 +802,7 @@ def find_unit_by_name(name, ns_name=None):
                 break
     return unit
 
-unit_scanner = Scanner([
+unit_scanner = re.Scanner([
     (r'\s+',  lambda s, b: ('space',b)),
     (r'-?\d+',  lambda s, b: ('digits', int(b))),
     (r'[\^*/]', lambda s, b: ('operator', b)),
@@ -876,72 +917,72 @@ def parse_unit(bytes, **kwds):
     return unit
 
 
+def name(unit, name, abbrev=None, no_prefix=False):
+    return CompoundUnit.register_name(unit.cannonicalized(), name, abbrev=abbrev, no_prefix=no_prefix)
+
 class metric(unit_namespace):
-    def name(unit, name, power):
-        return CompoundUnit.register_name(unit.cannonicalized(), name, power)
     #length
-    m = PrimitiveUnit(D.length, 'meter', 'm')
+    m = PrimitiveUnit(D.length, 'meters', 'm')
     km = 1e3 * m
     cm = 1e-2 * m
     mm = 1e-3 * m
     mcm = 1e-6 * m
     nm = 1e-9 *m
     #mass
-    g = PrimitiveUnit(D.mass, 'gram', 'g')
+    g = PrimitiveUnit(D.mass, 'grams', 'g')
     kg = 1e3 * g
     mg = 1e-3 * g
     mcg = 1e-6 * g
     ng = 1e-9 * g
     #time
-    s = s = PrimitiveUnit(D.time, 'second', 's')
+    s = s = PrimitiveUnit(D.time, 'seconds', 's')
     #area
     m2 = m**2
     cm2 = cm**2
     #volume
-    L = PrimitiveUnit(D.volume, 'liter', 'L')
+    L = PrimitiveUnit(D.volume, 'liters', 'L')
     mL = 1e-3 * L
     mcL = 1e-6 * L
     nL = 1e-9 * L
-    cc = cm3 = cm**3
+    cc = cm3 = name(cm**3, 'cubic_centimeters', 'cc', no_prefix=True)
     m3 = m**3
     #velocity
     m_s = m/s
     #acceleration
     m_s2 = m_s/s
     #force
-    N = name(kg*m_s2, 'newton', 'N')
+    N = name(kg*m_s2, 'newtons', 'N')
     kN = 1e3*N
     mN = 1e-3*N
     nN = 1e-9*N
     #energy
-    J = name(N*m, 'joule', 'J')
+    J = name(N*m, 'joules', 'J')
     MJ = 1e6*J
     kJ = 1e3*J
     mJ = 1e-3*J
     mcJ = 1e-6*J
     nJ = 1e-9*J
     #pressure
-    Pa = name(N/m2, 'pascal', 'Pa')
+    Pa = name(N/m2, 'pascals', 'Pa')
     GPa = 1e9*Pa
     MPa = 1e6*Pa
     kPa = 1e3*Pa
     mPa = 1e-3*Pa
     mcPa = 1e-6*Pa
     nPa = 1e-9*Pa
-    del name
 
 class imperial(unit_namespace):
     #length
-    in_ = PrimitiveUnit(D.length, 'inch', 'in')
-    ft = PrimitiveUnit(D.length, 'foot', 'ft')
-    yd = PrimitiveUnit(D.length, 'yard', 'yd')
-    furlong = PrimitiveUnit(D.length, 'furlong')
-    mile = PrimitiveUnit(D.length, 'mile', 'mi')
+    in_ = PrimitiveUnit(D.length, 'inches', 'in')
+    ft = PrimitiveUnit(D.length, 'feet', 'ft')
+    yd = PrimitiveUnit(D.length, 'yards', 'yd')
+    furlong = PrimitiveUnit(D.length, 'furlongs')
+    mile = PrimitiveUnit(D.length, 'miles', 'mi')
     #mass
-    oz = PrimitiveUnit(D.mass, 'ounce', 'oz')
-    lb = PrimitiveUnit(D.mass, 'pound', 'lb')
-    st = PrimitiveUnit(D.mass, 'stone', 'st')
-    ton = PrimitiveUnit(D.mass, 'ton', 't')
+    oz = PrimitiveUnit(D.mass, 'ounces', 'oz')
+    lb = PrimitiveUnit(D.mass, 'pounds', 'lb')
+    st = PrimitiveUnit(D.mass, 'stones', 'st')
+    ton = PrimitiveUnit(D.mass, 'tons', 't')
     #time
     s = metric.s
     #area
@@ -950,10 +991,10 @@ class imperial(unit_namespace):
     #volume
     cubic_inch = in_**3
     ft3 = ft**3
-    floz = PrimitiveUnit(D.volume, 'fluid_ounce', 'floz')
-    pt = PrimitiveUnit(D.volume, 'pint', 'pt')
-    qt = PrimitiveUnit(D.volume, 'quart', 'qt')
-    gal = PrimitiveUnit(D.volume, 'gallon', 'gal')
+    floz = PrimitiveUnit(D.volume, 'fluid_ounces', 'floz')
+    pt = PrimitiveUnit(D.volume, 'pints', 'pt')
+    qt = PrimitiveUnit(D.volume, 'quarts', 'qt')
+    gal = PrimitiveUnit(D.volume, 'gallons', 'gal')
     #velocity
     #acceleration
     #force
@@ -983,11 +1024,11 @@ class masses(unit_namespace):
 
 class times(unit_namespace):
     s = metric.s
-    min_ = PrimitiveUnit(D.time, 'minute', 'min')
-    hour = PrimitiveUnit(D.time, 'hour', 'hr')
-    day = PrimitiveUnit(D.time, 'day')
-    week = PrimitiveUnit(D.time, 'week')
-    year = PrimitiveUnit(D.time, 'year')
+    min_ = PrimitiveUnit(D.time, 'minutes', 'min')
+    hour = PrimitiveUnit(D.time, 'hours', 'hr')
+    day = PrimitiveUnit(D.time, 'days')
+    week = PrimitiveUnit(D.time, 'weeks')
+    year = PrimitiveUnit(D.time, 'years')
 
 class pressures(unit_namespace):
     Pa = metric.Pa
@@ -998,14 +1039,14 @@ class pressures(unit_namespace):
     mcPa = metric.mcPa
     nPa = metric.nPa
     psi = imperial.psi
-    atm = PrimitiveUnit(D.pressure, 'atmosphere', 'atm')
+    atm = PrimitiveUnit(D.pressure, 'atmospheres', 'atm')
     mmHg = PrimitiveUnit(D.pressure, 'millimeters_of_mercury', 'mmHg')
     torr = PrimitiveUnit(D.pressure, 'torr')
     bar = PrimitiveUnit(D.pressure, 'bar')
 
 class quantities(unit_namespace):
     quantity = PrimitiveUnit(D.quantity, '', '')
-    mol = PrimitiveUnit(D.quantity, 'mole', 'mol')
+    mol = PrimitiveUnit(D.quantity, 'moles', 'mol')
     kmol = 1e3*mol
     mmol = 1e-3*mol
     mcmol = 1e-6*mol
@@ -1037,14 +1078,16 @@ class gas_volumes(unit_namespace):
     mL = metric.mL
     cc = metric.cc
     m3 = metric.m3
-    in3 = imperial.in_.pow(3)
-    ft3 = imperial.ft.pow(3)
-    yd3 = imperial.yd.pow(3)
+    in3 = name(imperial.in_.pow(3), 'cubic_inches', None)
+    ft3 = name(imperial.ft.pow(3), 'cubic_feet', None)
+    yd3 = name(imperial.yd.pow(3), 'cubic_yards', None)
 
 class temperatures(unit_namespace):
     K = PrimitiveUnit(D.temperature, 'kelvin', 'K')
     C = PrimitiveUnit(D.temperature, 'centigrade', 'C')
     F = PrimitiveUnit(D.temperature, 'fahrenheit', 'F')
+
+del name
 
 #print metric.km * metric.kg / metric.s
 #print (metric.km * metric.kg / metric.s).cannonicalized()

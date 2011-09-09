@@ -38,6 +38,8 @@ def defml(names, *decs):
         names = [names]
     for name in names:
         globals()[name] = struct = make_struct(name, base=BaseMLStruct, *decs)
+        # set proper module to be pickleable
+        struct.__module__ = __name__
 
 @defmethod(get_ml_json, [object])
 def meth(o):
@@ -121,14 +123,17 @@ def get_prefix_unicode(p):
 
 @defmethod(make_unit_json, [units.CompoundUnit])
 def meth(cu):
+    compound_unit = dict(cls='compound_unit',
+                         prefix=get_prefix_unicode(cu.prefix),
+                         mls_and_powers=[[get_ml_json(unit), power]
+                                         for unit,power in cu.atoms_and_powers])
     prefix,name,abbrev = cu.get_name_abbrev_prefix()
     if name is not None:
         return dict(cls='named_unit',
-                    prefix=get_prefix_unicode(prefix), name=unicode(name), abbrev=unicode(abbrev))
-    return dict(cls='compound_unit',
-                prefix=get_prefix_unicode(cu.prefix),
-                mls_and_powers=[[get_ml_json(unit), power]
-                                  for unit,power in cu.atoms_and_powers])
+                    prefix=get_prefix_unicode(prefix), name=unicode(name),
+                    abbrev=abbrev and unicode(abbrev),
+                    compound=compound_unit)
+    return compound_unit
 
 defml('error',
       ['text', no_default, unicode])

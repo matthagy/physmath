@@ -107,7 +107,7 @@ def meth(num, to_unit):
                                  None],
                                 [V(mn, to_unit),
                                  V(md, num.unit, crossed_unit=True)]),
-                        V(b, to_unit) if b>0 else layout.neg(V(abs(b), unit))]),
+                        V(b, to_unit) if b>0 else layout.neg(V(abs(b), to_unit))]),
             V(result)))
         if result is dne:
             annotator.annotate(layout.zero_division_error)
@@ -132,7 +132,8 @@ volume_systems = dict(volume_systems())
 @defdimconvert('volume')
 def meth(num, to_unit):
     '''Convert between different volumes.
-       This algorithm is a bit a heristics hack, but likely the most logical way to handle this insanity.
+       This algorithm is a bit a heristics hack, but likely the most logical
+       way to handle this insanity.
     '''
 
     from_system = volume_systems[num.unit.cannonicalized().without_prefix()]
@@ -283,20 +284,24 @@ class Converter(object):
         return op
 
     def add_term(self, num, den=None, power=1):
+        num = self.x_as_physum(num)
         if den is None:
+            term_den = None
             den = as_physnum(Decimal(1))
-        num,den = map(self.x_as_physum, [num,den])
-        self.terms.append([num, den, power])
+        else:
+            term_den = den = self.x_as_physum(den)
+        self.terms.append([num, term_den, power])
+
         factor = num / den
         if power != 1:
             assert not isinstance(factor.quantity, (int,long))
             factor = factor ** power
+
         self.current_value = self.current_value * factor
-        #print 'XXX', self.current_value
         self.current_value.unit = self.current_value.unit.cannonicalized()
         if self.current_value.quantity is dne:
-            if not annotator.annotating:
-                raise
+            #if not annotator.annotating:
+            #    raise
             self.error = layout.zero_division_error
             return False
         return True
@@ -322,13 +327,13 @@ class Converter(object):
             num,den,power = term
             for i_part,part in enumerate([num,den]):
                 if part is None:
-                    parts.append(None)
-                    continue
-                op = V(part, crossed_unit=not (i_term==len(self.terms)-1 and i_part==0))
-                if power != 1:
-                    op = layout.power(layout.group(op), power)
-                #if i_term==0 and i_part==0 and self.name is not None:
-                #    op = layout.make_span(op, layout.compound_name(unicode(self.name)))
+                    op = layout.null()
+                else:
+                    op = V(part, crossed_unit=not (i_term==len(self.terms)-1 and i_part==0))
+                    if power != 1:
+                        op = layout.power(layout.group(op), layout.as_ml(power))
+                    #if i_term==0 and i_part==0 and self.name is not None:
+                    #    op = layout.make_span(op, layout.compound_name(unicode(self.name)))
                 parts.append(op)
             cnv.append(parts)
         return layout.make_convertion(*cnv)
@@ -414,7 +419,9 @@ class ConvertionGraph(object):
         dpower_from, node_from = self.get_node(self.normalize_unit(unit_from))
         dpower_to, node_to = self.get_node(self.normalize_unit(unit_to))
         if node_from is node_to:
-            raise ValueError("register prefix convertion; done automatically")
+            raise ValueError("%s(%s) -> %s(%s) prefix convertion unneccessary; done automatically" %
+                             (unit_from, self.normalize_unit(unit_from),
+                              unit_to, self.normalize_unit(unit_to)))
         factor = factor * Decimal(10) ** (dpower_to - dpower_from)
         node_from.convertion_arcs.append(ConvertionArc(node_to, factor,
                                                        invert_factor=False,
@@ -433,7 +440,7 @@ class ConvertionGraph(object):
     def get_node(self, unit):
         prefix,name,abbrev = unit.get_name_abbrev_prefix()
         if name is not None:
-            key = abbrev
+            key = name
             node_unit = unit * 10 ** - prefix.power
         else:
             key = unit.without_prefix()
@@ -540,3 +547,37 @@ def convertion_graph():
                            if lpn.quantity != 1 else rpn.quantity)
     return converter
 convertion_graph = convertion_graph()
+
+
+#print convert(PhysNum(SigFig('1.325'), U.temperatures.K), U.temperatures.C)
+def test():
+    dim = 'temperature'
+    dimt = U.UnitDimensionalityType(dim)
+    physnumt = physnum.PhysNumInnerType(unit_inner=dimt)
+
+    prim = U.temperatures.K
+    cmpd = U.CompoundUnit([(prim, 1)])
+
+    #print 'hash', hash(cmpd), hash(prim), hash(cmpd) == hash(prim)
+    #print 'eq', cmpd == prim
+    #print 'req', prim == cmpd
+
+    print hash(prim.get_dimensionality())
+    print hash(cmpd.get_dimensionality())
+
+    print 'typep unit prim %s' % typep(prim, dimt)
+    print 'typep unit cmpd %s' % typep(cmpd, dimt)
+
+    quant = SigFig('1560')
+    physnum_prim = PhysNum(quant,  prim)
+    physnum_cmpd = PhysNum(quant,  cmpd)
+
+    print 'typep physnum prim', typep(physnum_prim, physnumt)
+    print 'typep physnum cmpd', typep(physnum_cmpd, physnumt)
+
+    print 'convert prim', convert(PhysNum(SigFig('1560'), prim), U.temperatures.C)
+    print 'convert cmpd', convert(PhysNum(SigFig('1560'), cmpd), U.temperatures.C)
+
+__name__ == '__main__' and test()
+
+

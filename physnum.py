@@ -227,8 +227,8 @@ def meth(pn):
 @defmethod(atypes.typep, [object, PhysNumInnerType])
 def meth(op, pn):
     return (isinstance(op, PhysNum) and
-            typep(pn.quantity, op.quantity_inner) and
-            typep(pn.unit, op.unit_inner))
+            typep(op.quantity, pn.quantity_inner) and
+            typep(op.unit, pn.unit_inner))
 
 # Type Keyers
 class PhysNumInnerKeyer(atypes.KeyerBase):
