@@ -1,3 +1,16 @@
+'''Class SigFig for repressenting digits of a measurement that
+   convey meaningful inormation (i.e. are significant).
+
+   Current implementation is rather messy and have found we can
+   get away simpler data structure to represent the same information.
+
+   None the less, this implementation has been tested and found correct
+   for a large class of cases.  Additionally, this file includes some
+   simple and dirty testing to be ran as the code is evolved. Constant
+   testing is very important as the SigFig class is the core component
+   for the chemistry and physics calculations provided in this library.
+'''
+
 
 from decimal import Decimal
 
