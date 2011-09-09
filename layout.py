@@ -1,3 +1,11 @@
+'''Layout of math expressions.
+
+   A layout is hiercharcal structure of special objects that can represent
+   the calculations commonly performed in chemistry/physics. These objects
+   can then be serialized to a json-compatible format with the intent that
+   a corresponding javascript library can render them in a browser.
+'''
+
 from __future__ import absolute_import
 
 import operator
