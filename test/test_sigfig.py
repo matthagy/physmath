@@ -4,6 +4,17 @@ from decimal import Decimal
 
 from physmath.sigfig import SigFig
 
+def parse_lines(data, n=None, split=lambda line: line.split()):
+    for line in data.split('\n'):
+        line = line.split('#',1)[0]
+        line = line.strip()
+        if line:
+            parts = split(line)
+            if n is not None and len(parts) != n:
+                raise ValueError("bad line %r; split into %d parts when expecting %d" %
+                                 (line,len(parts),n))
+            yield parts
+
 def create_seq_checks(name, func, seq):
     def wrap():
         for args in seq:
@@ -147,11 +158,7 @@ old_check_data = '''
 '''
 
 def test_old():
-    for line in old_check_data.strip().split('\n'):
-        line = line.split('#',1)[0].strip()
-        if not line:
-            continue
-        inp,sigfigs,lsp,rep = line.split()
+    for inp,sigfigs,lsp,rep in parse_lines(old_check_data, n=4):
         sigfigs,lsp = map(int, [sigfigs, lsp])
         yield check_old, inp, sigfigs, lsp, rep
         if any(d in inp for d in '123456789'):
@@ -188,17 +195,8 @@ unop_checks = '''
     + -300 = -300
 '''
 
-def parse_lines(data):
-    for line in data.split('\n'):
-        line = line.split('#',1)[0]
-        line = line.strip()
-        if line:
-            yield line
-
-
 def test_unops():
-    for line in parse_lines(unop_checks):
-        op, operand, eq, expected_answer = line.split()
+    for op, operand, eq, expected_answer in parse_lines(unop_checks, n=4):
         assert eq == '='
         assert op in '+-'
         yield check_unop, operand, op, expected_answer
@@ -354,8 +352,7 @@ binop_checks = '''
 '''
 
 def test_binops():
-    for line in parse_lines(binop_checks):
-        l,o,r,e,a = line.split()
+    for l,o,r,e,a in parse_lines(binop_checks):
         assert e == '='
         assert o in ['+', '-', '/', '*', '**']
         yield check_binop, l, o, r, a
