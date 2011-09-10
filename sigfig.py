@@ -1,3 +1,6 @@
+'''Class SigFig for repressenting digits of a measurement that
+   convey meaningful inormation (i.e. are significant).
+'''
 
 from __future__ import absolute_import
 
