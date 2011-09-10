@@ -288,35 +288,6 @@ class SigFig(AutoRepr):
         return self.__class__(self.as_decimal().sqrt()).round_to_sigfigs(self.sigfigs)
 
 
-
-class SigFigBuilder(object):
-
-    def __init__(self):
-        self.digit_powers =  defaultdict(int)
-        self.sign = 0
-
-    def set_digit(self, power, digit):
-        self.digit_powers[power] = digit
-
-    def add_digit(self, power, digit):
-        self.digit_powers[power] += digit
-        e, self.digit_powers[power] = divmod(self.digit_powers[power], 10)
-        if e:
-            self.add_digit(power+1, e)
-
-    def clear_upper_zeros(self):
-        while self.digit_powers and self.digit_powers[max(self.digit_powers)] == 0:
-            del self.digit_powers[max(self.digit_powers)]
-
-    def fix_sign(self):
-        swap_sign = self.digit_powers[max(self.digit_powers)] < 0
-        if swap_sign:
-            self.sign = 0 if self.sign else 1
-            for i in self.digit_powers:
-                self.digit_powers[i] *= -1
-
-
-
 def parse_string(bytes):
     lex = Lexer(bytes.strip())
     [pm, digs_pre_dot, dot, digs_post_dot, exp, exp_power
