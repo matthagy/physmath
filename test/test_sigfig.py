@@ -164,9 +164,44 @@ def check_old(inp, sigfigs, lsp, rep):
     assert str(s) == rep, '%s != %s' % (str(s), rep)
 
 def parse_number(s):
-    if s.startswith('x'):
-        return Decimal(s[1::])
+    if s.endswith('x'):
+        return Decimal(s[:-1:])
     return SigFig(s)
+
+def check_unop(operand, op, expected_answer):
+    actual_answer = {'+' : operator.pos,
+                     '-' : operator.neg}[op](parse_number(operand))
+    expected_answer = parse_number(expected_answer)
+    assert actual_answer == expected_answer, '%s != %s' % (actual_answer, expected_answer)
+
+unop_checks = '''
+    - 2.34 = -2.34
+    + 2.34 = 2.34
+    - -1.087 = 1.087
+    + -1.087 = -1.087
+    + 1 = 1
+    - 1 = -1
+    - -1 = 1
+    + 300 = 300
+    - 300 = -300
+    - -300 = 300
+    + -300 = -300
+'''
+
+def parse_lines(data):
+    for line in data.split('\n'):
+        line = line.split('#',1)[0]
+        line = line.strip()
+        if line:
+            yield line
+
+
+def test_unops():
+    for line in parse_lines(unop_checks):
+        op, operand, eq, expected_answer = line.split()
+        assert eq == '='
+        assert op in '+-'
+        yield check_unop, operand, op, expected_answer
 
 def check_binop(lop, op, rop, expected_answer):
     actual_answer = {'+'  : operator.add,
@@ -212,14 +247,114 @@ binop_checks = '''
     10. - 2 = 8
     1.0e1 - 2 = 8
     10 - 5 = 5
+
+    10 + -2 = 10
+    10. + -2 = 8
+    1.0e1 + -2 = 8
+    10 + -5 = 5
+
+    103 + 7 = 1.10e2
+    252 + 8 = 2.60e2
+    130 + 10 = 140
+    130. + 10. = 1.40e2
+
+    20 + -10 = 10
+    20 - 10 = 10
+
+    1.52 + 2.48 = 4.00
+    2.32 + 1.43 = 3.75
+    2.80 + 0.10 = 2.90
+
+    5.3x + 0.05x = 5.35x
+    5.3x + 0.05x = 5.35
+
+    5.3 + 0.05 = 5.4
+    5.3 + 0.04 = 5.3
+    5.3 + 0.06 = 5.4
+
+    5.3 + 0.05x = 5.4
+    5.3 + 0.04x = 5.3
+    5.3 + 0.06x = 5.4
+
+    5.3x + 0.05 = 5.4
+    5.3x + 0.04 = 5.3
+    5.3x + 0.06 = 5.4
+
+    5.2x + 0.05x = 5.25x
+    5.2x + 0.05x = 5.25
+
+    5.2 + 0.05 = 5.2
+    5.2 + 0.04 = 5.2
+    5.2 + 0.06 = 5.3
+
+    5.2 + 0.05x = 5.2
+    5.2 + 0.04x = 5.2
+    5.2 + 0.06x = 5.3
+
+    5.2x + 0.05 = 5.2
+    5.2x + 0.04 = 5.2
+    5.2x + 0.06 = 5.3
+
+    3.4x + -0.2x = 3.2x
+    3.4 + -0.2 = 3.2
+    3.4 - 0.2 = 3.2
+
+    3.4x + -0.25x = 3.15x
+
+    3.4 + -0.25 = 3.2
+    3.4 + -0.24 = 3.2
+    3.4 + -0.26 = 3.1
+
+    3.4 + -0.25x = 3.2
+    3.4 + -0.24x = 3.2
+    3.4 + -0.26x = 3.1
+
+    3.4x + -0.25 = 3.2
+    3.4x + -0.24 = 3.2
+    3.4x + -0.26 = 3.1
+
+    3.4 - 0.25 = 3.2
+    3.4 - 0.24 = 3.2
+    3.4 - 0.26 = 3.1
+
+    3.4 - 0.25x = 3.2
+    3.4 - 0.24x = 3.2
+    3.4 - 0.26x = 3.1
+
+    3.4x - 0.25 = 3.2
+    3.4x - 0.24 = 3.2
+    3.4x - 0.26 = 3.1
+
+
+    1 * 1 = 1
+    1 * 2 = 2
+    1 * 10 = 10
+
+    1 * 1.0e1 = 1.0e1
+    1 * 10. = 1.0e1
+
+    1 * -20 = -20
+    1 * -2.0e1 = -2.0e1
+
+    2x * 2x = 4x
+    2 * 2 = 4
+    2.0 * 2.0 = 4.0
+    2 * 2.0 = 4
+    2x * 2 = 4
+    2x * 2.0 = 4.0
+    2x * 2.00 = 4.00
+
+    3x * -3x = -9x
+    3 * -3 = -9
+    3.0 * -3.0 = -9.0
+    3 * -3.0 = -9
+    3x * -3 = -9
+    3x * -3.0 = -9.0
+    3x * -3.00 = -9.00
 '''
 
 def test_binops():
-    for line in binop_checks.split('\n'):
-        line = line.split('#',1)[0]
-        line = line.strip()
-        if not line:
-            continue
+    for line in parse_lines(binop_checks):
         l,o,r,e,a = line.split()
         assert e == '='
         assert o in ['+', '-', '/', '*', '**']
