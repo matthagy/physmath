@@ -10,6 +10,7 @@ from collections import defaultdict
 from hlab.lexing import Lexer, LexicalError
 from hlab.bases import AutoRepr
 
+valid_digits = tuple(range(10))
 
 class SigFig(AutoRepr):
 
@@ -26,10 +27,17 @@ class SigFig(AutoRepr):
         elif isinstance(arg, SigFig):
             arg = (arg.sign, arg.digits, arg.power)
 
-        (self.sign,
-         self.digits,
-         self.power
-         ) = arg
+        sign, digits, power = arg
+        digits = tuple(digits)
+
+        assert sign in (0,1)
+        assert all(isinstance(digit, (int,long)) and digit in valid_digits
+                   for digit in digits)
+        assert isinstance(power, (int,long))
+
+        self.sign = sign
+        self.digits = digits
+        self.power = power
 
     def repr_args(self):
         return [str(self)]
