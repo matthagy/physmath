@@ -1,4 +1,5 @@
 
+import operator
 from decimal import Decimal
 
 from physmath.sigfig import SigFig
@@ -153,9 +154,75 @@ def test_old():
         inp,sigfigs,lsp,rep = line.split()
         sigfigs,lsp = map(int, [sigfigs, lsp])
         yield check_old, inp, sigfigs, lsp, rep
+        if any(d in inp for d in '123456789'):
+            yield check_old, '-'+inp, sigfigs, lsp, '-'+rep
 
 def check_old(inp, sigfigs, lsp, rep):
     s = SigFig(inp)
     assert s.sigfigs == sigfigs
     assert s.least_significant_place == lsp
-    assert str(s) == rep
+    assert str(s) == rep, '%s != %s' % (str(s), rep)
+
+def parse_number(s):
+    if s.startswith('x'):
+        return Decimal(s[1::])
+    return SigFig(s)
+
+def check_binop(lop, op, rop, expected_answer):
+    actual_answer = {'+'  : operator.add,
+                     '-'  : operator.sub,
+                     '/'  : operator.div,
+                     '*'  : operator.mul,
+                     '**' : operator.pow}[op](parse_number(lop),
+                                             parse_number(rop))
+    expected_answer = parse_number(expected_answer)
+    assert actual_answer == expected_answer, '%s != %s' % (actual_answer, expected_answer)
+
+binop_checks = '''
+    1 + 1 = 2
+    1 + 0 = 1
+    1 + 10 = 10
+    1 + 10. = 11
+    1.0 + 10.0 = 11.0
+    1.0 + 10. = 11
+    5 + 6 = 11
+    2 + 3 = 5
+    5 + 5 = 1.0e1
+    12 + 8 = 2.0e1
+
+    20 + 30 = 50
+    20 + 32 = 50
+    20 + 34 = 50
+    20 + 35 = 60
+    20 + 36 = 60
+    20 + 45 = 60
+    21 + 45 = 66
+
+    18 + 6 = 24
+    18 + 1.0 = 19
+    18 + 1.3 = 19
+    18 + 1.5 = 2.0e1
+    18 + 1.7 = 2.0e1
+
+    28 + 1.4 = 29
+    28 + 1.5 = 3.0e1
+    28 + 1.6 = 3.0e1
+
+    10 - 2 = 10
+    10. - 2 = 8
+    1.0e1 - 2 = 8
+    10 - 5 = 5
+'''
+
+def test_binops():
+    for line in binop_checks.split('\n'):
+        line = line.split('#',1)[0]
+        line = line.strip()
+        if not line:
+            continue
+        l,o,r,e,a = line.split()
+        assert e == '='
+        assert o in ['+', '-', '/', '*', '**']
+        yield check_binop, l, o, r, a
+
+
