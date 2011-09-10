@@ -1,21 +1,11 @@
-'''Class SigFig for repressenting digits of a measurement that
-   convey meaningful inormation (i.e. are significant).
 
-   Current implementation is rather messy and have found we can
-   get away simpler data structure to represent the same information.
+from __future__ import absolute_import
 
-   None the less, this implementation has been tested and found correct
-   for a large class of cases.  Additionally, this file includes some
-   simple and dirty testing to be ran as the code is evolved. Constant
-   testing is very important as the SigFig class is the core component
-   for the chemistry and physics calculations provided in this library.
-'''
-
-
-from decimal import Decimal
-
+from collections import defaultdict
 from hlab.lexing import Lexer, LexicalError
 from hlab.bases import AutoRepr
+
+from .sigfig import test_sigfigs
 
 class SigFig(AutoRepr):
 
@@ -24,25 +14,38 @@ class SigFig(AutoRepr):
             arg = str(arg)
         if isinstance(arg, str):
             arg = parse_string(arg)
-        elif isinstance(arg, Decimal):
-            arg = convert_decimal(arg)
         elif isinstance(arg, (int,long)):
             arg = convert_integer(arg)
         elif isinstance(arg, SigFig):
-            arg = (arg.sign, arg.digs_pre_dot, arg.dot, arg.digs_post_dot, arg.exp, arg.exp_power)
+            arg = (arg.sign, arg.digits, arg.power)
         (self.sign,
-         self.digs_pre_dot,
-         self.dot,
-         self.digs_post_dot,
-         self.exp,
-         self.exp_power
+         self.digits,
+         self.power
          ) = arg
 
     def repr_args(self):
         return [str(self)]
 
+    #legacy method
+    def as_scientific(self):
+        return self
+
     def as_tuple(self):
-        return (self.sign, self.digs_pre_dot, self.dot, self.digs_post_dot, self.exp, self.exp_power)
+        return self.sign, self.digits, self.power
+
+    @property
+    def sigfigs(self):
+        if self.digits[0] != 0:
+            return len(self.digits)
+        return max(1, len(self.digits) - 1)
+
+    @property
+    def most_significant_place(self):
+        return self.power
+
+    @property
+    def least_significant_place(self):
+        return 1 + self.power - len(self.digits)
 
     def __str__(self):
         base, exp = self.get_format_args()
@@ -51,275 +54,236 @@ class SigFig(AutoRepr):
         return '%se%s' % (base, exp)
 
     def get_format_args(self, min_exp_power=3):
-        return self.as_scientific()._get_format_args(min_exp_power)
+        if self.digits[0] == 0:
+            return self._get_zero_format_args()
 
-    def get_exp_format_args(self):
-        return self.as_scientific()._get_exp_format_args()
+        sigfigs = self.sigfigs
+        power = self.power
 
-    def _get_format_args(self, min_exp_power):
-        if min_exp_power!=None and abs(self.exp_power) > max(self.sigfigs, min_exp_power):
+        if min_exp_power!=None and abs(power) > max(sigfigs, min_exp_power):
             return self._get_exp_format_args()
-        digs = map(str, self.digs_pre_dot + self.digs_post_dot)
-        if self.sigfigs <= self.exp_power:
-            #check for trailing zeros
-            if self.digs_post_dot[-1::] == (0,):
+
+        digs = map(str, self.digits)
+
+        #deal with trailing zeros
+        if sigfigs > power:
+            insignificant_zeros = 0
+            #prevet trailing decimal, i.e. 10.
+            if power > 0 and len(digs) == power+1 and digs[-1] == '0':
                 return self._get_exp_format_args()
-            digs += ['0'] * (1 + self.exp_power - self.sigfigs)
-        #prevet trailing decimal, i.e. 10.
-        elif self.exp_power > 0 and len(digs) == self.exp_power+1 and digs[-1] == '0':
-            return self._get_exp_format_args()
         else:
-            if digs == ['0']:
-                return '0', None
-            if self.exp_power >= 0:
-                if not (1+self.exp_power==len(digs) and digs[-1] != '0'):
-                    digs.insert(1+self.exp_power, '.')
-            else:
-                digs = ['0.'] + ['0'] * (-1 - self.exp_power) + digs
+            #check for significant trailing zeros
+            if self.digits[-1::] == (0,):
+                return self._get_exp_format_args()
+            #add insignificant trailing zeros
+            insignificant_zeros = (1 + power - sigfigs)
+        digs += ['0'] * insignificant_zeros
+
+        #special case to prevent decimal points in zero
+        if digs == ['0']:
+            return '0', None
+
+        #place deicmal point
+        if power >= 0:
+            if not insignificant_zeros and power+1 < len(digs):
+                digs.insert(1+power, '.')
+        else:
+            digs = ['0.'] + ['0'] * (-1 - power) + digs
+
         return ['%s%s' % ('-' if self.sign else '', ''.join(digs)),
                 None]
 
+    def _get_zero_format_args(self):
+        assert set(self.digits) == set([0])
+        if self.power > 0:
+            return self._get_exp_format_args()
+        assert self.digits == (0,)
+        if self.power == 0:
+            return '0', None
+        return '0.' + '0' * -self.power, None
+
     def _get_exp_format_args(self):
         return ['%s%d%s' % ('-' if self.sign else '',
-                            (self.digs_pre_dot or [0])[0],
-                            '.' + ''.join(map(str, self.digs_post_dot)) if
-                            self.digs_post_dot else ''),
-                self.exp_power]
-
-
-    def as_decimal(self):
-        x = self.as_scientific()
-        return Decimal((x.sign,
-                        x.digs_pre_dot + x.digs_post_dot,
-                        x.exp_power - len(x.digs_post_dot)))
-
-    def shift_sigfigs(self, sigfigs=1):
-        s = self.as_scientific()
-        if s is self:
-            s = self.__class__(self)
-        assert s is not self
-        s.dot = s.exp = True
-        if sigfigs > 0:
-            s.digs_post_dot += (0,) * sigfigs
-        elif -sigfigs > len(s.digs_post_dot):
-            raise ValueError("bad shift")
-        else:
-            s.digs_post_dot = s.digs_post_dot[:sigfigs]
-        return s
-
-    @staticmethod
-    def strip_leading_zeros(seq):
-        i = iter(seq)
-        for el in i:
-            if el != 0:
-                break
-        else:
-            return []
-        return [el] + list(i)
-
-    _sigfigs = None
-    @property
-    def sigfigs(self):
-        '''cache this calculated property as accessed a lot!
-        '''
-        return self._calculate_sigfigs()
-        #if self._sigfigs is None:
-        #    self._sigfigs = self._calculate_sigfigs()
-        #return self._sigfigs
-
-    def _calculate_sigfigs(self):
-        #handle tricky case of zero
-        if list(set(self.digs_pre_dot) | set(self.digs_post_dot)) == [0]:
-            if self.exp_power == 0:
-                return max(1, len(self.digs_post_dot))
-            return len(self.digs_pre_dot) + len(self.digs_post_dot)
-        if self.dot:
-            if set(self.digs_pre_dot) <= set([0]):
-                return len(self.strip_leading_zeros(self.digs_post_dot))
-            return (len(self.strip_leading_zeros(self.digs_pre_dot)) +
-                    len(self.digs_post_dot))
-        return len(self.strip_leading_zeros(self.digs_pre_dot[::-1]))
-
-    @property
-    def least_significant_place(self):
-        if self.dot:
-            return self.exp_power - len(self.digs_post_dot)
-        n = len(self.digs_pre_dot)
-        if tuple(set(self.digs_pre_dot)) == (0,):
-            return 0
-        while n and self.digs_pre_dot[n-1]==0:
-            n -= 1
-        return len(self.digs_pre_dot) - n + self.exp_power
-
-    def as_scientific(self):
-        if len(self.digs_pre_dot)==1 and self.digs_pre_dot != (0,):
-            return self
-        # strip trailing zeros
-        trailing_zeros = 0
-        digs_pre_dot = list(self.digs_pre_dot)
-        digs_post_dot = list(self.digs_post_dot)
-        if not self.dot:
-            while digs_pre_dot and digs_pre_dot[-1] == 0:
-                trailing_zeros += 1
-                digs_pre_dot.pop(-1)
-            while digs_post_dot and digs_post_dot[-1] == 0:
-                digs_post_dot.pop(-1)
-        #combine all digits
-        exp_power = self.exp_power + trailing_zeros + len(digs_pre_dot) - 1
-        digs = list(digs_pre_dot + digs_post_dot)
-        #strip leading zeros
-        while digs and digs[0] == 0:
-            digs.pop(0)
-            exp_power -= 1
-        #handle zero
-        if not digs:
-            sigfigs = self.sigfigs
-            return self.__class__((0, (0,), self.dot and sigfigs > 1,
-                                   (0,) * sigfigs if self.dot else (),
-                                   False, 0))
-        return self.__class__((self.sign, tuple(digs[:1:]), len(digs) > 1,
-                               tuple(digs[1:]), True, exp_power))
-
-    def round_to_sigfigs(self, n):
-        if n<1:
-            raise ValueError("bad number of sigfigs to round to %r" % (n,))
-        s = self.as_scientific()
-        if list(s.digs_pre_dot) != [0]:
-            n -= 1
-        return self.round_scientific_to_index(n, s)
-
-    def round_to_place(self, n):
-        s = self.as_scientific()
-        return self.round_scientific_to_index(max(-1, -(n - s.exp_power)), s)
-
-    def round_scientific_to_index(self, index, s=None):
-        if s is None:
-            s = self.as_scientific()
-        digs = list(s.digs_pre_dot + s.digs_post_dot)
-        index += 1
-        if len(digs) <= index:
-            while len(digs) < index:
-                digs.append(0)
-        else:
-            if index==0:
-                digs.insert(0,0)
-                s.exp_power += 1
-                index += 1
-            round_dig = digs[index]
-            if (round_dig > 5) or (round_dig == 5 and digs[index-1]%2):
-                digs[index-1] += 1
-            del digs[index::]
-            #carry
-            for i in xrange(len(digs)-1, 0, -1):
-                if digs[i]==10:
-                    digs[i] = 0
-                    digs[i-1] += 1
-            if digs[0]==10:
-                digs[0] = 0
-                digs.insert(0, 1)
-                s.exp_power += 1
-        s.digs_pre_dot = (digs[0],)
-        s.digs_post_dot = tuple(digs[1:])
-        return s
-
-    def __pos__(self):
-        return self
+                            self.digits[0],
+                            '.' + ''.join(map(str, self.digits[1::])) if
+                            len(self.digits) > 1 else ''),
+                self.power]
 
     def __neg__(self):
-        return self.__class__((int(not self.sign), self.digs_pre_dot, self.dot,
-                               self.digs_post_dot, self.exp, self.exp_power))
+        return self.__class__((1 if self.sign==0 else 1,
+                               self.digits, self.power))
 
-    def __nonzero__(self):
-        return self.as_decimal() != 0
-
-    def __hash__(self):
-        return hash(self.as_decimal())
-
-    def perform_binary_operation(self, other, func, rule):
-        selfd = self.as_decimal()
-        if not isinstance(other, (SigFig, Decimal, int, long)):
-            return NotImplemented
-        otherd = other.as_decimal() if isinstance(other, SigFig) else other
-        valued = func(selfd, otherd)
-        value = self.__class__(valued)
-        sigfigs = (min(self.sigfigs, other.sigfigs)
-                   if isinstance(other, SigFig) else
-                   self.sigfigs)
-        if rule=='mul':
-            value = value.round_to_sigfigs(min(self.sigfigs, other.sigfigs)
-                                           if isinstance(other, SigFig) else
-                                           self.sigfigs)
-            if valued == 0:
-                value.digs_pre_dot = ()
-        elif rule=='add':
-            lsp = (max(self.least_significant_place, other.least_significant_place)
-                   if isinstance(other, SigFig) else
-                   self.least_significant_place)
-            value = value.round_to_place(lsp)
-            if value.digs_pre_dot == (0,) and value.digs_post_dot == ():
-                value.digs_post_dot = (0,) * max(0, -lsp)
-                value.digs_pre_dot = (0,) * max(0, sigfigs-max(0, -lsp))
-        else:
-            raise ValueError("bad sigfig rule %r" % (rule,))
-        return value
-
-    def __mul__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: a*b, 'mul')
-    def __rmul__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: b*a, 'mul')
-    def __div__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: a/b, 'mul')
-    def __rdiv__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: b/a, 'mul')
-    def __mod__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: a%b, 'mul')
-    def __rmod__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: b%a, 'mul')
-    __truediv__ = __div__
-    __rtruediv__ = __rdiv__
+    def __sub__(self, other):
+        return self + (-other)
 
     def __add__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: a+b, 'add')
-    def __radd__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: b+a, 'add')
-    def __sub__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: a-b, 'add')
-    def __rsub__(self, other):
-        return self.perform_binary_operation(other, lambda a,b: b-a, 'add')
+        assert isinstance(other, SigFig)
 
-    def __gt__(self, other):
-        return (self-other).as_decimal() > 0
-    def __ge__(self, other):
-        return (self-other).as_decimal() >= 0
-    def __eq__(self, other):
-        if not isinstance(other, (int,long,Decimal,SigFig)):
-            return NotImplemented
-        try:
-            return not (abs((self-other).as_decimal()) > 0)
-        except TypeError,e:
-            return False
-    def __ne__(self, other):
-        return not (self == other)
-    def __le__(self, other):
-        return (self-other).as_decimal() <= 0
-    def __lt__(self, other):
-        return (self-other).as_decimal() < 0
+        li,lf,ld = self.create_arithmetic_array()
+        ri,rf,rd = other.create_arithmetic_array()
 
-    def __pow__(self, op):
-        if not isinstance(op, (int,long)):
-            raise TypeError("pow not implemented for non-integer type %r" % (op,))
-        if op < 0:
-            return 1 / self**-op
-        if op == 0:
-            return self / self
-        acc = self
-        for i in xrange(op-1):
-            acc = acc * self
-        return acc
+        si = 1 + max(li, ri)
+        sf = max(lf, rf) - 2
+        sd = [0] * (1 + si - sf)
 
-    def sqrt(self):
-        return self.__class__(self.as_decimal().sqrt()).round_to_sigfigs(self.sigfigs)
+        for oi,of,od in [[li,lf,ld], [ri,rf,rd]]:
+            for i,d in zip(xrange(oi, of-1, -1), od):
+                if i>=sf:
+                    sd[-(i-si)] += d
 
+        for i in xrange(len(sd)-1, 0, -1):
+            if sd[i] > 9:
+                sd[i] -= 10
+                sd[i-1] += 1
+            if sd[i] < -9:
+                sd[i] += 10
+                sd[i-1] -= 1
+
+        while len(sd)>3 and sd[0] == 0:
+            sd.pop(0)
+
+        sign = sd[0] < 0
+        if sign:
+            sd = [d*-1 for d in sd]
+
+        for i in xrange(len(sd)-1, 0, -1):
+            if sd[i] < 0:
+                sd[i] += 10
+                sd[i-1] -= 1
+
+        if sd[-2] > 5 or (sd[-2] == 5 and sd[-1]%2):
+            sd[-3] += 1
+
+        assert len(sd) >= 3
+        sd.pop(-1)
+        sd.pop(-1)
+
+        return self.__class__((sign, sd, sf + 2 + len(sd) - 1))
+
+    def __mul__(self, other):
+        assert isinstance(other, SigFig)
+
+        li,lf,ld = self.create_arithmetic_array()
+        ri,rf,rd = other.create_arithmetic_array()
+
+        #print li,lf,ld
+        #print ri,rf,rd
+        #print
+
+        acc = defaultdict(int)
+        def dump():
+            keys = sorted(acc, reverse=True)
+            print keys
+            print map(acc.get, keys)
+            print
+
+        for ai,ad in zip(xrange(li, lf-1, -1), ld):
+            for bi,bd in zip(xrange(ri, rf-1, -1), rd):
+                acc[ai+bi] += ad*bd
+
+        #dump()
+
+        for i in sorted(set(acc) | set(i+1 for i in acc)):
+            r, acc[i] = divmod(acc[i], 10)
+            acc[i+1] += r
+
+        #dump()
+
+        while acc and acc[max(acc)] == 0:
+            del acc[max(acc)]
+
+        #dump()
+
+        sign = acc[max(acc)] < 0
+        if sign:
+            for i in acc:
+                acc[i] *= -1
+
+        for i in sorted(acc):
+            if acc[i] < 0:
+                acc[i] += 10
+                acc[i-1] -= 1
+
+        sigfigs = min(self.sigfigs, other.sigfigs)
+        lsp = max(acc) - sigfigs + 1
+
+        if acc[lsp-1] > 5 or (acc[lsp-1] == 5 and acc[lsp-2]%2):
+            acc[lsp] += 1
+        for i in list(acc):
+            if i<lsp:
+                del acc[i]
+
+        #dump()
+
+        digits = [acc[i] for i in xrange(max(acc), min(acc)-1, -1)]
+        #print digits
+
+        return self.__class__((sign, digits, max(acc)))
+
+    def create_arithmetic_array(self):
+        return [self.most_significant_place, self.least_significant_place,
+                [d*(-1 if self.sign else 1) for d in self.digits]]
+
+    def __truediv__(self, other):
+        assert isinstance(other, SigFig)
+
+
+        li,lp = self.create_integer_representation(10)
+        ri,rp = other.create_integer_representation(0)
+
+        ai = li // ri
+
+        acc = {}
+        for i in xrange(1<<22):
+            if 10**i > ai:
+                break
+            n = (ai if i==0 else ai//10**(i-1)) % 10
+            if n:
+                acc[i] = n
+
+    __div__ = __truediv__
+
+    def create_integer_representation(self, extra):
+        shift = len(self.digits) - 1
+        power = self.power - shift
+        acc = 0
+        for d in self.digits[::-1]:
+            acc *= 10
+            acc += d
+        acc *= 10 ** extra
+        power -= extra
+        acc *= (-1 if self.sign else 1)
+        return acc,power
+
+
+
+class SigFigBuilder(object):
+
+    def __init__(self):
+        self.digit_powers =  defaultdict(int)
+        self.sign = 0
+
+    def set_digit(self, power, digit):
+        self.digit_powers[power] = digit
+
+    def add_digit(self, power, digit):
+        self.digit_powers[power] += digit
+        e, self.digit_powers[power] = divmod(self.digit_powers[power], 10)
+        if e:
+            self.add_digit(power+1, e)
+
+    def clear_upper_zeros(self):
+        while self.digit_powers and self.digit_powers[max(self.digit_powers)] == 0:
+            del self.digit_powers[max(self.digit_powers)]
+
+    def fix_sign(self):
+        swap_sign = self.digit_powers[max(self.digit_powers)] < 0
+        if swap_sign:
+            self.sign = 0 if self.sign else 1
+            for i in self.digit_powers:
+                self.digit_powers[i] *= -1
+
+    def carry_negative
 
 def parse_string(bytes):
     lex = Lexer(bytes.strip())
@@ -327,24 +291,40 @@ def parse_string(bytes):
      ] = lex.pulls(r'[+-]', r'\d+', r'\.', r'\d+', r'[eE]', r'[+-]?\d+')
     if not lex.eof or (exp and not exp_power):
         raise LexicalError("bad sigfig literal %r" % (bytes,))
-    if not digs_pre_dot:
-        digs_pre_dot = '0'
+
     sign = 1 if pm == '-' else 0
-    digs_pre_dot = tuple(map(int, digs_pre_dot))
-    digs_post_dot = tuple(map(int, digs_post_dot))
-    dot = bool(dot)
-    exp = bool(exp)
-    exp_power = int(exp_power) if exp_power else 0
-    #print 'PARSE', bytes, (sign, digs_pre_dot, dot, digs_post_dot, exp, exp_power)
-    return (sign, digs_pre_dot, dot, digs_post_dot, exp, exp_power)
+    power = int(exp_power) if exp_power else 0
+    digs_pre_dot = map(int, digs_pre_dot)
+    digs_post_dot = map(int, digs_post_dot)
 
-def convert_decimal(d):
-    sign, digits, exp = d.as_tuple()
-    return (sign, digits, True, (), True, exp)
+    #remove insignificant trailing zeros
+    if not dot:
+        if set(digs_pre_dot) > set([0]):
+            while digs_pre_dot and digs_pre_dot[-1] == 0:
+                digs_pre_dot.pop(-1)
+                power += 1
 
-def convert_integer(i):
-    #cheap trick, but works
-    return parse_string(str(i))
+    if not digs_pre_dot:
+        digs_pre_dot.append(0)
 
+    #make scientific by shifting digits and power accordingly
+    while len(digs_pre_dot) > 1:
+        digs_post_dot.insert(0, digs_pre_dot.pop(-1))
+        power += 1
+    assert len(digs_pre_dot) == 1
 
-__name__ == '__main__' and main()
+    digits = digs_pre_dot + digs_post_dot
+
+    #remove insignificant leading zeros
+    while len(digits) > 1 and digits[0] == 0:
+        digits.pop(0)
+        power -= 1
+
+    digits = tuple(digits)
+
+    return sign, digits, power
+
+__name__ == '__main__' and test_sigfigs(sigfig_class=SigFig)
+
+print SigFig('90.8513423') + SigFig('12.6')
+print SigFig('90.8513423') * SigFig('1.343e-8')
