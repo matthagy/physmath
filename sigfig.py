@@ -69,11 +69,9 @@ class SigFig(AutoRepr):
         return self.round_at_index(n)
 
     def round_to_place(self, n):
-        #print 'round to', n
         return self.round_at_index(self.power - n + 1)
 
     def round_at_index(self, i):
-        #print 'round', self, self.sign, self.digits, self.power, 'at', i
         if i < 0:
             return self.__class__('0')
 
@@ -327,18 +325,3 @@ def parse_string(bytes):
 
     return sign, digits, power
 
-#sf = SigFig('120')
-#print sf.least_significant_place
-#m = sf - 120
-#print m
-# print SigFig('0.00000') - 0
-
-# sf = SigFig('22.534')
-# print sf
-# print sf.round_to_sigfigs(4)
-# print SigFig(sf.as_decimal())
-# print
-# print SigFig('90.8513423') + SigFig('12.6')
-# print SigFig('90.8513423') * SigFig('1.343e-8')
-
-print SigFig('10') + SigFig('-5')
