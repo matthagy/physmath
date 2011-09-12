@@ -1,4 +1,5 @@
 
+from __future__ import division
 
 from hlab.bases import AutoRepr
 from jamenson.runtime.multimethod import defmethod, MultiMethod
@@ -11,7 +12,7 @@ def gcf(a, b=0):
         a,b = b, a - b*(a//b)
     return a
 
-class Ratio(AutoRepr, A.AlgebraBase):
+class Ratio(AutoRepr, A.DivAlgebraBase):
 
     def __init__(self, num, den=None):
         if den is None:
@@ -38,6 +39,16 @@ class Ratio(AutoRepr, A.AlgebraBase):
             num,den = -num,-den
         return self.__class__(num, den)
 
+    def __float__(self):
+        return self.num / self.den
+
+    def __int__(self):
+        r = self.normalized()
+        if r.den != 1:
+            raise ValueError("cannot coere %s to an integer" % (self,))
+        return r.num
+
+
 as_ratio = MultiMethod('as_ratio')
 
 @defmethod(as_ratio, [Ratio])
@@ -50,6 +61,8 @@ def meth(i):
 
 @defmethod(A.mm_eq, [Ratio, Ratio])
 def meth(a, b):
+    if a is b:
+        return True
     a = a.normalized()
     b = b.normalized()
     return a.num==b.num and a.den==b.den
@@ -66,11 +79,11 @@ def meth(r):
 @A.defboth_mm_add([Ratio, Ratio])
 def meth(a, b):
     return Ratio(a.num * b.den + b.num * a.den,
-                 a.den * b.den).normalized()
+                 a.den * b.den)
 
 @A.defboth_mm_add([Ratio, (int,long)])
 def meth(r, i):
-    return Ratio(r.num + i * r.den, r.den).normalized()
+    return Ratio(r.num + i * r.den, r.den)
 
 @A.defboth_mm_mul([Ratio, Ratio])
 def meth(a, b):
@@ -78,7 +91,7 @@ def meth(a, b):
 
 @A.defboth_mm_mul([Ratio, (int,long)])
 def meth(r, i):
-    return Ratio(r.num * i, r.den).normalized()
+    return Ratio(r.num * i, r.den)
 
 @defmethod(A.mm_pow, [Ratio, (int,long)])
 def meth(r, i):
@@ -90,16 +103,13 @@ def meth(a, b):
     return a + -b
 
 @defmethod(A.mm_div, [Ratio, Ratio])
-@defmethod(A.mm_truediv, [Ratio, Ratio])
 def meth(a, b):
     return a * b ** -1
 
 @defmethod(A.mm_div, [Ratio, (int,long)])
-@defmethod(A.mm_truediv, [Ratio, (int, long)])
 def meth(r, i):
-    return Ratio(r.num, r.div * i).normalized()
+    return Ratio(r.num, r.div * i)
 
 @defmethod(A.mm_div, [(int,long), Ratio])
-@defmethod(A.mm_truediv, [(int,long), Ratio])
 def meth(i, r):
     return Ratio(i) / r
