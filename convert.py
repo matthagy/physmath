@@ -1,4 +1,4 @@
-'''Utilities for performing unit convertions
+'''Utilities for performing unit conversions
 '''
 
 import re
@@ -39,36 +39,43 @@ def convert_factor(number, num, den=None, power=1):
     return Converter(number).factor_convert(num, den, power).finish()
 
 def convert_unit_prefix(num, to_unit):
-    '''perform power convertions (convertion of unit prefix)
-         ie. km -> mm or mol -> nmol
+    '''perform power conversions (conversion of unit prefix)
+         e.g. km -> mm or mol -> nmol
     '''
     if num.unit == to_unit:
         return num
     return Converter(num).prefix_convert(to_unit).finish()
 
 def convert_by_path(num, to_unit):
-    '''Perform convertions using a path of conversion factors
-         ie. m -> cm -> in -> ft
-       Also handles prefix convertions as needed
+    '''Perform conversions using a path of conversion factors
+         e.g. m -> cm -> in -> ft
+       Also handles prefix conversions as needed
     '''
     if num.unit == to_unit:
-        return run
+        return num
     return Converter(num).path_convert(to_unit).finish()
 
-x_convert = MultiMethod('x_convert')
+x_convert = MultiMethod('x_convert',
+                        """Specialized converters to use when
+                           prefix conversion alone isn't sufficient
+                        """)
 
 @defmethod(x_convert, [anytype, anytype])
 def meth(num, unit):
     '''Fallback on convert_by_path when nothing more specific
+       has been defined
     '''
     return convert_by_path(num, unit)
 
 
 # # # # # # # # # # # # # #
-# Dimensional Convertions #
+# Dimensional Conversions #
 # # # # # # # # # # # # # #
 
 def defdimconvert(dim):
+    '''Define a specialized converter by the dimensionality of the
+       units involved
+    '''
     dimt = U.UnitDimensionalityType(dim)
     def wrap(func):
         return defmethod(x_convert, [physnum.PhysNumInnerType(unit_inner=dimt), dimt])(func)
@@ -95,10 +102,12 @@ def meth(num, to_unit):
         b = Decimal(b)
         b = -md * b / mn
         mn,md = md,mn
+
     try:
         result = PhysNum(num.quantity * Decimal(mn) / Decimal(md) + b, to_unit)
     except ZeroDivisionError:
         result = dne
+
     if annotator.annotating:
         annotator.annotate(
           layout.equals(
@@ -109,8 +118,10 @@ def meth(num, to_unit):
                                  V(md, num.unit, crossed_unit=True)]),
                         V(b, to_unit) if b>0 else layout.neg(V(abs(b), to_unit))]),
             V(result)))
+
         if result is dne:
             annotator.annotate(layout.zero_division_error)
+
     return result
 
 def volume_systems():
@@ -132,30 +143,43 @@ volume_systems = dict(volume_systems())
 @defdimconvert('volume')
 def meth(num, to_unit):
     '''Convert between different volumes.
-       This algorithm is a bit a heristics hack, but likely the most logical
+       This algorithm is a bit of a heuristics hack, but likely the most logical
        way to handle this insanity.
     '''
 
     from_system = volume_systems[num.unit.cannonicalized().without_prefix()]
     to_system = volume_systems[to_unit.cannonicalized().without_prefix()]
 
-    # definitions of howto go from on system to another using the
+    # the following heuristics make use of a terse shorthand with following
+    # poorly named utility functions
+
+    # definitions of how to go from one system to another using the
     # following function-based shorthand
     cnv = Converter(num)
     factor = cnv.factor_convert
     prefix = cnv.prefix_convert
     path = cnv.path_convert
 
-    def rfactor(a,b,power=1): return factor(b,a,power)
-    def liter_cc(): prefix('mL'); rfactor('1 mL', '1 cc')
-    def cc_liter(): prefix('cm3', 3); rfactor('1 cc', '1 mL')
-    def cc_in(): prefix('cm3', 3); rfactor('2.54 cm', '1 in', 3)
-    def in_cc(): prefix('in3', 3); rfactor('1 in', '2.54 cm', 3)
-    def liter_in(): liter_cc(); cc_in()
-    def mL_il(to_unit=to_unit): prefix('mL'), rfactor('28.41 mL', '1 floz'), path(to_unit)
-    def ig_cc(): path('in3', 3), in_cc()
-    def il_in3(): path('floz'), rfactor('1 floz', '1.739 in3')
-    def il_cc(): il_in3(), in_cc()
+    def rfactor(a,b,power=1)   : return factor(b,a,power)
+    def liter_cc()             : prefix('mL'); rfactor('1 mL', '1 cc')
+    def cc_liter()             : prefix('cm3', 3); rfactor('1 cc', '1 mL')
+    def cc_in()                : prefix('cm3', 3); rfactor('2.54 cm', '1 in', 3)
+    def in_cc()                : prefix('in3', 3); rfactor('1 in', '2.54 cm', 3)
+    def liter_in()             : liter_cc(); cc_in()
+    def mL_il(to_unit=to_unit) : prefix('mL'), rfactor('28.41 mL', '1 floz'), path(to_unit)
+    def ig_cc()                : path('in3', 3), in_cc()
+    def il_in3()               : path('floz'), rfactor('1 floz', '1.739 in3')
+    def il_cc()                : il_in3(), in_cc()
+
+    # heuristics rules as determined by the initial and final units
+    #
+    #   l - liters
+    #   m - cubic meters
+    #   ig - imperial gas (in3, ft3, yd3)
+    #   il - imperial liquid (oz, pt, qt, gal)
+    #
+    # e.g. converter from liters to oz would correspond to the
+    # label "lil" and the inverse convertion would be "ill"
 
     {'ll': lambda : prefix(to_unit),
      'lm': lambda : (liter_cc(), prefix(to_unit, 3)),
@@ -177,7 +201,7 @@ def meth(num, to_unit):
      'ilig' : lambda : (il_in3(), path(to_unit, 3)),
      'ilil' : lambda : prefix(to_unit)
      }[''.join(x[0] for name in [from_system, to_system] for x in name.split('_'))
-       ]() #exectue the proper convertion
+       ]() #execute the proper convertion
     return cnv.finish()
 
 
@@ -187,7 +211,7 @@ def sign(op):
     return 0
 
 class Converter(object):
-    '''Utility class for construction a sequence of factor convertions and
+    '''Utility class for construction a sequence of factor conversions and
        rendering as `layout.convertion`
     '''
 
@@ -419,7 +443,7 @@ class ConvertionGraph(object):
         dpower_from, node_from = self.get_node(self.normalize_unit(unit_from))
         dpower_to, node_to = self.get_node(self.normalize_unit(unit_to))
         if node_from is node_to:
-            raise ValueError("%s(%s) -> %s(%s) prefix convertion unneccessary; done automatically" %
+            raise ValueError("%s(%s) -> %s(%s) prefix convertion unnecessary; done automatically" %
                              (unit_from, self.normalize_unit(unit_from),
                               unit_to, self.normalize_unit(unit_to)))
         factor = factor * Decimal(10) ** (dpower_to - dpower_from)
