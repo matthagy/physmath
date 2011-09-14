@@ -2,7 +2,7 @@
    Object to signify answer doesn't exist (e.g. division by zero)
 """
 
-from jamenson.runtime.multimethod import defmethod
+from jamenson.runtime.multimethod import defmethod, defboth_wrapper
 from jamenson.runtime.atypes import anytype
 
 from . import algebra as A
@@ -18,7 +18,6 @@ dne = DNEType()
 def meth(op):
     return dne
 
-@defmethod(A.mm_binop_base, [DNEType, anytype])
-@defmethod(A.mm_binop_base, [anytype, DNEType])
+@defboth_wrapper(A.mm_binop_base, [DNEType, anytype])
 def meth(a, b):
     return dne
