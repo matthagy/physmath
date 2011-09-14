@@ -12,6 +12,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from hlab.bases import AutoRepr
+from hlab.memorize import memorize
 
 from jamenson.runtime.collections import OrderedDict, OrderedSet, OrderedDefaultDict
 from jamenson.runtime import atypes
@@ -19,7 +20,6 @@ from jamenson.runtime.atypes import anytype, as_optimized_type, typep, IsType, S
 from jamenson.runtime.multimethod import defmethod, MultiMethod
 from jamenson.runtime.as_string import as_string
 
-from .util import memorize
 from . import algebra as A
 
 

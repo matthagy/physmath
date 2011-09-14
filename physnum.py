@@ -9,13 +9,13 @@ from decimal import Decimal
 from functools import partial
 
 from hlab.bases import AutoRepr
+from hlab.memorize import memorize
 
 from jamenson.runtime import atypes
 from jamenson.runtime.atypes import anytype, as_optimized_type, typep, Seq, as_type
 from jamenson.runtime.multimethod import defmethod, MultiMethod
 from jamenson.runtime.as_string import as_string
 
-from .util import memorize
 from . import algebra as A
 from .sigfig import SigFig
 from .ratio import Ratio, as_ratio

@@ -10,7 +10,6 @@ def fixup(force=False):
     from types import ModuleType
 
     load_order = '''
-    util
     sigfig
     algebra
     dne
