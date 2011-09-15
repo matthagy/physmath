@@ -132,7 +132,7 @@ def meth(p,pow):
 def meth(a, b):
     return PhysNum(a.quantity * b.quantity, a.unit * b.unit)
 
-@A.defboth_mm_mul([PhysNum, anytype])
+@A.defboth_mm_mul([PhysNum, lossless_number_type])
 def meth(p, a):
     return PhysNum(p.quantity * a, p.unit)
 
@@ -145,7 +145,7 @@ def xdiv(a, b):
 def meth(a, b):
     return PhysNum(xdiv(a.quantity, b.quantity), a.unit / b.unit)
 
-@defmethod(A.mm_div, [PhysNum, anytype])
+@defmethod(A.mm_div, [PhysNum, lossless_number_type])
 def meth(p, a):
     return PhysNum(xdiv(p.quantity, a), p.unit)
 
@@ -167,7 +167,7 @@ def add_dimensionless_check(p, other):
 def meth(a, b):
     return PhysNum(a.quantity + b.quantity, add_unit_check('add', a, b))
 
-@A.defboth_mm_add([PhysNum, anytype])
+@A.defboth_mm_add([PhysNum, lossless_number_type])
 def meth(p, a):
     return PhysNum(p.quantity + a, add_dimensionless_check(p, a))
 
@@ -175,7 +175,7 @@ def meth(p, a):
 def meth(a, b):
     return PhysNum(a.quantity - b.quantity, add_unit_check('sub', a, b))
 
-@defmethod(A.mm_sub, [PhysNum, anytype])
+@defmethod(A.mm_sub, [PhysNum, lossless_number_type])
 def meth(p, a):
     return PhysNum(p.quantity - a, add_dimensionless_check(p, a))
 
