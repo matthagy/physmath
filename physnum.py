@@ -58,15 +58,6 @@ class PhysNum(A.DivAlgebraBase, AutoRepr):
             return hash(self.quantity)
         return hash(self.quantity) ^ hash(self.unit) ^ hash(self.name) ^ 893409342
 
-    def __eq__(self, other):
-        if isinstance(other, PhysNum):
-            return (self.quantity == other.quantity and
-                    self.unit == other.unit and
-                    self.name == other.name)
-        if self.unit != dimensionless or self.name is not None:
-            return NotImplemented
-        return self.quantity == other
-
     def split_posneg(self):
         unit = self.unit
         if isinstance(unit, PrimitiveUnit):
@@ -113,6 +104,18 @@ def parse_physical_number(bytes, quantity_class=None, create_unit=False):
     if quantity_class is None:
         quantity_class = int if not re.search('[.eE]', number) else Decimal
     return PhysNum(quantity_class(number), unit, name)
+
+@defmethod(A.mm_eq, [PhysNum, PhysNum])
+def meth(a, b):
+    return (self.quantity == other.quantity and
+            self.unit == other.unit and
+            self.name == other.name)
+
+@A.defboth_mm_eq([PhysNum, lossless_number_type])
+def meth(p, o):
+    if p.unit != dimensionless or p.name is not None:
+        return NotImplemented
+    return p.quantity == o
 
 @defmethod(A.mm_neg, [PhysNum])
 def meth(p):
