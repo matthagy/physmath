@@ -11,6 +11,8 @@ from __future__ import absolute_import
 import operator
 from decimal import Decimal
 
+from hlab.memorize import memorize
+
 from jamenson.runtime.multimethod import MultiMethod, defmethod
 from jamenson.runtime.atypes import anytype, Seq, as_optimized_type, IsType, typep, eq_types, union
 from jamenson.runtime.struct import make_struct, BaseStruct, no_default
@@ -93,14 +95,10 @@ def meth(n):
 # units #
 # # # # #
 
-unit_json_cache = {}
 @defmethod(get_ml_json, [units.BaseUnit])
+@memorize
 def meth(unit):
-    try:
-        return unit_json_cache[unit]
-    except KeyError:
-        json = unit_json_cache[unit] = make_unit_json(unit)
-        return json
+    return make_unit_json(unit)
 
 make_unit_json = MultiMethod('make_unit_json')
 
