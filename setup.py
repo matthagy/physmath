@@ -24,7 +24,7 @@ setup(
     url='https://github.com/matthagy/physmath',
     author='Matt Hagy',
     author_email='hagy@gatech,.edu',
-    description='Scheme compiler and runtime for Python',
+    description='Utilities for calculation with measurements',
     long_description='''
     ''',
     classifiers = [
