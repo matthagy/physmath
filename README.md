@@ -10,4 +10,4 @@ Currently, parts of this project depends on utilities in the
 [hlab](https://github.com/matthagy/hlab) package
 and the runtime portion of the
 [jamenson](https://github.com/matthagy/jamenson) package.
-These dependencies will hopefully be removed in the future.
+These dependencies will be removed in the future.
